@@ -1,272 +1,248 @@
-/*
-	FilterBox Tool
+(function ($) {
+  // Plugin
+  $.fn.filterbox = function (options) {
+    return this.each(function () {
+      $.data(this, "filterbox", {});
+      $.data(this, "filterbox", Filterbox(this, options));
+    });
+  };
 
-	http://imperavi.com/kube/
+  // Initialization
+  function Filterbox(el, options) {
+    return new Filterbox.prototype.init(el, options);
+  }
 
-	Copyright (c) 2009-2014, Imperavi LLC.
-*/
-(function($)
-{
-	// Plugin
-	$.fn.filterbox = function(options)
-	{
-		return this.each(function()
-		{
-			$.data(this, 'filterbox', {});
-			$.data(this, 'filterbox', Filterbox(this, options));
-		});
-	};
+  $.Filterbox = Filterbox;
+  $.Filterbox.NAME = "filterbox";
+  $.Filterbox.VERSION = "1.0";
+  $.Filterbox.opts = {
+    // settings
+    placeholder: false,
+  };
 
-	// Initialization
-	function Filterbox(el, options)
-	{
-		return new Filterbox.prototype.init(el, options);
-	}
+  // Functionality
+  Filterbox.fn = $.Filterbox.prototype = {
+    // Initialization
+    init: function (el, options) {
+      this.$element = el !== false ? $(el) : false;
 
-	$.Filterbox = Filterbox;
-	$.Filterbox.NAME = 'filterbox';
-	$.Filterbox.VERSION = '1.0';
-	$.Filterbox.opts = {
+      this.loadOptions(options);
+      this.build();
+    },
+    loadOptions: function (options) {
+      this.opts = $.extend(
+        {},
+        $.extend(true, {}, $.Filterbox.opts),
+        this.$element.data(),
+        options
+      );
+    },
+    setCallback: function (type, e, data) {
+      var events = $._data(this.$element[0], "events");
+      if (events && typeof events[type] != "undefined") {
+        var value = [];
+        var len = events[type].length;
+        for (var i = 0; i < len; i++) {
+          var namespace = events[type][i].namespace;
+          if (
+            namespace == "tools." + $.Filterbox.NAME ||
+            namespace == $.Filterbox.NAME + ".tools"
+          ) {
+            var callback = events[type][i].handler;
+            value.push(
+              typeof data == "undefined"
+                ? callback.call(this, e)
+                : callback.call(this, e, data)
+            );
+          }
+        }
 
-		// settings
-		placeholder: false
-	};
+        if (value.length == 1) return value[0];
+        else return value;
+      }
 
-	// Functionality
-	Filterbox.fn = $.Filterbox.prototype = {
+      return typeof data == "undefined" ? e : data;
+    },
+    build: function () {
+      this.$sourceBox = $('<div class="filterbox" />');
+      this.$sourceSelect = $('<span class="filterbox-toggle" />');
+      this.$sourceLayer = $('<ul class="filterbox-list hide" />');
+      this.$source = $(
+        '<input type="text" id="' +
+          this.$element.attr("id") +
+          '-input" class="' +
+          this.$element.attr("class") +
+          '" />'
+      );
 
-		// Initialization
-		init: function(el, options)
-		{
-			this.$element = el !== false ? $(el) : false;
+      this.$sourceBox.append(this.$source);
+      this.$sourceBox.append(this.$sourceSelect);
+      this.$sourceBox.append(this.$sourceLayer);
 
-			this.loadOptions(options);
-			this.build();
-		},
-		loadOptions: function(options)
-		{
-			this.opts = $.extend(
-				{},
-				$.extend(true, {}, $.Filterbox.opts),
-				this.$element.data(),
-				options
-			);
-		},
-		setCallback: function(type, e, data)
-		{
-			var events = $._data(this.$element[0], 'events');
-			if (events && typeof events[type] != 'undefined')
-			{
-				var value = [];
-				var len = events[type].length;
-				for (var i = 0; i < len; i++)
-				{
-					var namespace = events[type][i].namespace;
-					if (namespace == 'tools.' + $.Filterbox.NAME || namespace == $.Filterbox.NAME + '.tools')
-					{
-						var callback = events[type][i].handler;
-						value.push((typeof data == 'undefined') ? callback.call(this, e) : callback.call(this, e, data));
-					}
-				}
+      this.setPlaceholder();
 
-				if (value.length == 1) return value[0];
-				else return value;
-			}
+      this.$element.hide().after(this.$sourceBox);
+      this.$element
+        .find("option")
+        .each($.proxy(this.buildListItemsFromOptions, this));
 
-			return (typeof data == 'undefined') ? e : data;
+      this.$source.on("keyup", $.proxy(this.clearSelected, this));
+      this.$sourceSelect.on("click", $.proxy(this.load, this));
 
-		},
-		build: function()
-		{
-			this.$sourceBox = $('<div class="filterbox" />');
-			this.$sourceSelect = $('<span class="filterbox-toggle" />');
-			this.$sourceLayer = $('<ul class="filterbox-list hide" />');
-			this.$source = $('<input type="text" id="' + this.$element.attr('id') + '-input" class="' + this.$element.attr('class') + '" />');
+      this.preventBodyScroll();
+    },
+    load: function (e) {
+      e.preventDefault();
 
-			this.$sourceBox.append(this.$source);
-			this.$sourceBox.append(this.$sourceSelect);
-			this.$sourceBox.append(this.$sourceLayer);
+      if (this.$sourceLayer.hasClass("open")) {
+        this.close();
+        return;
+      }
 
-			this.setPlaceholder();
+      var value = this.$element.val();
 
-			this.$element.hide().after(this.$sourceBox);
-			this.$element.find('option').each($.proxy(this.buildListItemsFromOptions, this));
+      this.$sourceLayer.addClass("open").show();
 
-			this.$source.on('keyup', $.proxy(this.clearSelected, this));
-			this.$sourceSelect.on('click', $.proxy(this.load, this));
+      var items = this.$sourceLayer.find("li").removeClass("active");
+      this.setSelectedItem(items, value);
 
-			this.preventBodyScroll();
+      $(document).on("click.tools.filterbox", $.proxy(this.close, this));
+      $(document).on(
+        "keydown.tools.filterbox",
+        $.proxy(function (e) {
+          var key = e.which;
+          var $el;
+          var item;
 
-		},
-		load: function(e)
-		{
-			e.preventDefault();
+          if (key === 38) {
+            // up
+            e.preventDefault();
 
-			if (this.$sourceLayer.hasClass('open'))
-			{
-				this.close();
-				return;
-			}
+            if (items.hasClass("active")) {
+              item = items.filter("li.active");
+              item.removeClass("active");
 
-			var value = this.$element.val();
+              var prev = item.prev();
+              $el = prev.size() !== 0 ? ($el = prev) : items.last();
+            } else {
+              $el = items.last();
+            }
 
-			this.$sourceLayer.addClass('open').show();
+            $el.addClass("active");
+            this.setScrollTop($el);
+          } else if (key === 40) {
+            // down
+            e.preventDefault();
 
-			var items = this.$sourceLayer.find('li').removeClass('active');
-			this.setSelectedItem(items, value);
+            if (items.hasClass("active")) {
+              item = items.filter("li.active");
+              item.removeClass("active");
 
-			$(document).on('click.tools.filterbox', $.proxy(this.close, this));
-			$(document).on('keydown.tools.filterbox', $.proxy(function(e)
-			{
-			   var key = e.which;
-			   var $el;
-			   var item;
+              var next = item.next();
+              $el = next.size() !== 0 ? next : items.first();
+            } else {
+              $el = items.first();
+            }
 
-			   if (key === 38) // up
-			   {
-				   e.preventDefault();
+            $el.addClass("active");
+            this.setScrollTop($el);
+          } else if (key === 13) {
+            // enter
+            if (!items.hasClass("active")) return;
 
-				   if (items.hasClass('active'))
-				   {
-					   	item = items.filter('li.active');
-				   		item.removeClass('active');
+            item = items.filter("li.active");
+            this.onItemClick(e, item);
+          } else if (key === 27) {
+            // esc
+            this.close();
+          }
+        }, this)
+      );
+    },
+    clearSelected: function () {
+      if (this.$source.val().length === 0) this.$element.val(0);
+    },
+    setSelectedItem: function (items, value) {
+      var selectEl = items.filter("[rel=" + value + "]");
+      if (selectEl.size() === 0) {
+        selectEl = false;
 
-				   		var prev = item.prev();
-				   		$el = (prev.size() !== 0) ? $el = prev : items.last();
-				   }
-				   else
-				   {
-				   		$el = items.last();
-				   }
+        // if user typed value
+        var sourceValue = this.$source.val();
+        $.each(items, function (i, s) {
+          var $s = $(s);
+          if ($s.text() == sourceValue) {
+            selectEl = $s;
+          }
+        });
 
-				   $el.addClass('active');
-				   this.setScrollTop($el);
-			   }
-			   else if (key === 40) // down
-			   {
-				   e.preventDefault();
+        if (selectEl === false) return;
+      }
 
-				   if (items.hasClass('active'))
-				   {
-				   		item = items.filter('li.active');
-				   		item.removeClass('active');
+      selectEl.addClass("active");
+      this.setScrollTop(selectEl);
+    },
+    setScrollTop: function ($el) {
+      this.$sourceLayer.scrollTop(
+        this.$sourceLayer.scrollTop() + $el.position().top - 40
+      );
+    },
+    buildListItemsFromOptions: function (i, s) {
+      var $el = $(s);
+      var val = $el.val();
+      if (val === 0) return;
 
-				   		var next = item.next();
-				   		$el = (next.size() !== 0) ? next : items.first();
-				   }
-				   else
-				   {
-					    $el = items.first();
-				   }
+      var item = $("<li />");
 
-				   $el.addClass('active');
-				   this.setScrollTop($el);
+      item.attr("rel", val).text($el.html());
+      item.on("click", $.proxy(this.onItemClick, this));
 
-			   }
-			   else if (key === 13) // enter
-			   {
-			   		if (!items.hasClass('active')) return;
+      this.$sourceLayer.append(item);
+    },
+    onItemClick: function (e, item) {
+      e.preventDefault();
 
-				   	item = items.filter('li.active');
-					this.onItemClick(e, item);
-			   }
-			   else if (key === 27) // esc
-			   {
-				   this.close();
-			   }
+      var $el = $(item || e.target);
+      var rel = $el.attr("rel");
+      var text = $el.text();
 
-			}, this));
+      this.$source.val(text);
+      this.$element.val(rel);
 
-		},
-		clearSelected: function()
-		{
-			if (this.$source.val().length === 0) this.$element.val(0);
-		},
-		setSelectedItem: function(items, value)
-		{
-			var selectEl = items.filter('[rel=' + value + ']');
-			if (selectEl.size() === 0)
-			{
-				selectEl = false;
+      this.close();
 
-				// if user typed value
-				var sourceValue = this.$source.val();
-				$.each(items, function(i,s)
-				{
-					var $s = $(s);
-					if ($s.text() == sourceValue)
-					{
-						selectEl = $s;
-					}
-				});
+      this.setCallback("select", { id: rel, value: text });
+    },
+    preventBodyScroll: function () {
+      this.$sourceLayer.on("mouseover", function () {
+        $("html").css("overflow", "hidden");
+      });
+      this.$sourceLayer.on("mouseout", function () {
+        $("html").css("overflow", "");
+      });
+    },
+    setPlaceholder: function () {
+      if (!this.opts.placeholder) return;
+      this.$source.attr("placeholder", this.opts.placeholder);
+    },
+    close: function (e) {
+      if (
+        e &&
+        ($(e.target).hasClass("filterbox-toggle") ||
+          $(e.target).closest("div.filterbox").size() == 1)
+      ) {
+        return;
+      }
 
-				if (selectEl === false) return;
-			}
+      this.$sourceLayer.removeClass("open").hide();
+      $(document).off(".tools.filterbox");
+    },
+  };
 
-			selectEl.addClass('active');
-			this.setScrollTop(selectEl);
-		},
-		setScrollTop: function($el)
-		{
-			this.$sourceLayer.scrollTop(this.$sourceLayer.scrollTop() + $el.position().top - 40);
-		},
-		buildListItemsFromOptions: function(i,s)
-		{
-			var $el = $(s);
-			var val = $el.val();
-			if (val === 0) return;
+  $(window).on("load.tools.filterbox", function () {
+    $('[data-tools="filterbox"]').filterbox();
+  });
 
-			var item = $('<li />');
-
-			item.attr('rel', val).text($el.html());
-			item.on('click', $.proxy(this.onItemClick, this));
-
-			this.$sourceLayer.append(item);
-		},
-		onItemClick: function(e, item)
-		{
-			e.preventDefault();
-
-			var $el = $(item || e.target);
-			var rel = $el.attr('rel');
-			var text = $el.text();
-
-			this.$source.val(text);
-			this.$element.val(rel);
-
-			this.close();
-
-			this.setCallback('select', { id: rel, value: text });
-		},
-		preventBodyScroll: function()
-		{
-			this.$sourceLayer.on('mouseover', function() { $('html').css('overflow', 'hidden'); });
-			this.$sourceLayer.on('mouseout', function() { $('html').css('overflow', ''); });
-		},
-		setPlaceholder: function()
-		{
-			if (!this.opts.placeholder) return;
-			this.$source.attr('placeholder', this.opts.placeholder);
-		},
-		close: function(e)
-		{
-			if (e && ($(e.target).hasClass('filterbox-toggle') || $(e.target).closest('div.filterbox').size() == 1))
-			{
-				return;
-			}
-
-			this.$sourceLayer.removeClass('open').hide();
-			$(document).off('.tools.filterbox');
-		}
-	};
-
-	$(window).on('load.tools.filterbox', function()
-	{
-		$('[data-tools="filterbox"]').filterbox();
-	});
-
-	// constructor
-	Filterbox.prototype.init.prototype = Filterbox.prototype;
-
-
+  // constructor
+  Filterbox.prototype.init.prototype = Filterbox.prototype;
 })(jQuery);

@@ -1,193 +1,168 @@
-/*
-	Livesearch Tool
+(function ($) {
+  // Plugin
+  $.fn.livesearch = function (options) {
+    return this.each(function () {
+      $.data(this, "livesearch", {});
+      $.data(this, "livesearch", Livesearch(this, options));
+    });
+  };
 
-	http://imperavi.com/kube/
+  // Initialization
+  function Livesearch(el, options) {
+    return new Livesearch.prototype.init(el, options);
+  }
 
-	Copyright (c) 2009-2014, Imperavi LLC.
-*/
-(function($)
-{
-	// Plugin
-	$.fn.livesearch = function(options)
-	{
-		return this.each(function()
-		{
-			$.data(this, 'livesearch', {});
-			$.data(this, 'livesearch', Livesearch(this, options));
-		});
+  $.Livesearch = Livesearch;
+  $.Livesearch.NAME = "livesearch";
+  $.Livesearch.VERSION = "1.0";
+  $.Livesearch.opts = {
+    // settings
+    url: false,
+    target: false,
+    min: 2,
+    params: false,
+    appendForms: false,
+  };
 
-	};
+  // Functionality
+  Livesearch.fn = $.Livesearch.prototype = {
+    // Initialization
+    init: function (el, options) {
+      this.$element = el !== false ? $(el) : false;
+      this.loadOptions(options);
 
-	// Initialization
-	function Livesearch(el, options)
-	{
-		return new Livesearch.prototype.init(el, options);
-	}
+      this.build();
+    },
+    loadOptions: function (options) {
+      this.opts = $.extend(
+        {},
+        $.extend(true, {}, $.Livesearch.opts),
+        this.$element.data(),
+        options
+      );
+    },
+    setCallback: function (type, e, data) {
+      var events = $._data(this.$element[0], "events");
+      if (events && typeof events[type] != "undefined") {
+        var value = [];
+        var len = events[type].length;
+        for (var i = 0; i < len; i++) {
+          var namespace = events[type][i].namespace;
+          if (
+            namespace == "tools." + $.Livesearch.NAME ||
+            namespace == $.Livesearch.NAME + ".tools"
+          ) {
+            var callback = events[type][i].handler;
+            value.push(
+              typeof data == "undefined"
+                ? callback.call(this, e)
+                : callback.call(this, e, data)
+            );
+          }
+        }
 
-	$.Livesearch = Livesearch;
-	$.Livesearch.NAME = 'livesearch';
-	$.Livesearch.VERSION = '1.0';
-	$.Livesearch.opts = {
+        if (value.length == 1) return value[0];
+        else return value;
+      }
 
-		// settings
-		url: false,
-		target: false,
-		min: 2,
-		params: false,
-		appendForms: false
-	};
+      return typeof data == "undefined" ? e : data;
+    },
+    build: function () {
+      this.$box = $('<span class="livesearch-box" />');
 
-	// Functionality
-	Livesearch.fn = $.Livesearch.prototype = {
+      this.$element.after(this.$box);
+      this.$box.append(this.$element);
 
-		// Initialization
-		init: function(el, options)
-		{
-			this.$element = el !== false ? $(el) : false;
-			this.loadOptions(options);
+      this.$element.off("keyup.tools.livesearch");
+      this.$element.on("keyup.tools.livesearch", $.proxy(this.load, this));
 
-			this.build();
-		},
-		loadOptions: function(options)
-		{
-			this.opts = $.extend(
-				{},
-				$.extend(true, {}, $.Livesearch.opts),
-				this.$element.data(),
-				options
-			);
-		},
-		setCallback: function(type, e, data)
-		{
-			var events = $._data(this.$element[0], 'events');
-			if (events && typeof events[type] != 'undefined')
-			{
-				var value = [];
-				var len = events[type].length;
-				for (var i = 0; i < len; i++)
-				{
-					var namespace = events[type][i].namespace;
-					if (namespace == 'tools.' + $.Livesearch.NAME || namespace == $.Livesearch.NAME + '.tools')
-					{
-						var callback = events[type][i].handler;
-						value.push((typeof data == 'undefined') ? callback.call(this, e) : callback.call(this, e, data));
-					}
-				}
+      this.$icon = $('<span class="livesearch-icon" />');
+      this.$box.append(this.$icon);
 
-				if (value.length == 1) return value[0];
-				else return value;
-			}
+      this.$close = $('<span class="close" />').hide();
+      this.$box.append(this.$close);
 
-			return (typeof data == 'undefined') ? e : data;
+      this.$close.off("click.tools.livesearch");
+      this.$close.on(
+        "click.tools.livesearch",
+        $.proxy(function () {
+          this.search();
+          this.$element.val("").focus();
+          this.$close.hide();
+        }, this)
+      );
+    },
+    toggleClose: function (length) {
+      if (length === 0) this.$close.hide();
+      else this.$close.show();
+    },
+    load: function () {
+      var value = this.$element.val();
+      var data = "";
 
-		},
-		build: function()
-		{
-			this.$box = $('<span class="livesearch-box" />');
+      if (value.length > this.opts.min) {
+        var name = "q";
+        if (typeof this.$element.attr("name") != "undefined")
+          name = this.$element.attr("name");
 
-			this.$element.after(this.$box);
-			this.$box.append(this.$element);
+        data += "&" + name + "=" + value;
+        data = this.appendForms(data);
 
-			this.$element.off('keyup.tools.livesearch');
-			this.$element.on('keyup.tools.livesearch', $.proxy(this.load, this));
+        var str = "";
+        if (this.opts.params) {
+          this.opts.params = $.trim(
+            this.opts.params.replace("{", "").replace("}", "")
+          );
+          var properties = this.opts.params.split(",");
+          var obj = {};
+          $.each(properties, function (k, v) {
+            var tup = v.split(":");
+            obj[$.trim(tup[0])] = $.trim(tup[1]);
+          });
 
-			this.$icon = $('<span class="livesearch-icon" />');
-			this.$box.append(this.$icon);
+          str = [];
+          $.each(
+            obj,
+            $.proxy(function (k, v) {
+              str.push(k + "=" + v);
+            }, this)
+          );
 
-			this.$close = $('<span class="close" />').hide();
-			this.$box.append(this.$close);
+          str = str.join("&");
 
-			this.$close.off('click.tools.livesearch');
-			this.$close.on('click.tools.livesearch', $.proxy(function()
-			{
-				this.search();
-				this.$element.val('').focus();
-				this.$close.hide();
+          data += "&" + str;
+        }
+      }
 
-			}, this));
+      this.toggleClose(value.length);
+      this.search(data);
+    },
+    appendForms: function (data) {
+      if (!this.opts.appendForms) return data;
 
-		},
-		toggleClose: function(length)
-		{
-			if (length === 0) this.$close.hide();
-			else this.$close.show();
-		},
-		load: function()
-		{
-			var value = this.$element.val();
-			var data = '';
+      $.each(this.opts.appendForms, function (i, s) {
+        data += "&" + $(s).serialize();
+      });
 
-			if (value.length > this.opts.min)
-			{
-				var name = 'q';
-				if (typeof this.$element.attr('name') != 'undefined') name = this.$element.attr('name');
+      return data;
+    },
+    search: function (data) {
+      $.ajax({
+        url: this.opts.url,
+        type: "post",
+        data: data,
+        success: $.proxy(function (result) {
+          $(this.opts.target).html(result);
+          this.setCallback("result", result);
+        }, this),
+      });
+    },
+  };
 
-				data += '&' + name + '=' + value;
-				data = this.appendForms(data);
+  $(window).on("load.tools.livesearch", function () {
+    $('[data-tools="livesearch"]').livesearch();
+  });
 
-				var str = '';
-				if (this.opts.params)
-				{
-					this.opts.params = $.trim(this.opts.params.replace('{', '').replace('}', ''))
-					var properties = this.opts.params.split(',');
-					var obj = {};
-					$.each(properties, function(k, v)
-					{
-					    var tup = v.split(':');
-					    obj[$.trim(tup[0])] = $.trim(tup[1]);
-					});
-
-					str = [];
-					$.each(obj, $.proxy(function(k, v)
-					{
-						str.push(k + "=" + v);
-
-					}, this));
-
-					str = str.join("&");
-
-					data += '&' + str;
-				}
-			}
-
-			this.toggleClose(value.length);
-			this.search(data);
-
-		},
-		appendForms: function(data)
-		{
-			if (!this.opts.appendForms) return data;
-
-			$.each(this.opts.appendForms, function(i, s)
-			{
-				data += '&' + $(s).serialize();
-			});
-
-			return data;
-		},
-		search: function(data)
-		{
-			$.ajax({
-				url: this.opts.url,
-				type: 'post',
-				data: data,
-				success: $.proxy(function(result)
-				{
-					$(this.opts.target).html(result);
-					this.setCallback('result', result);
-
-				}, this)
-			});
-		}
-	};
-
-	$(window).on('load.tools.livesearch', function()
-	{
-		$('[data-tools="livesearch"]').livesearch();
-	});
-
-	// constructor
-	Livesearch.prototype.init.prototype = Livesearch.prototype;
-
-
+  // constructor
+  Livesearch.prototype.init.prototype = Livesearch.prototype;
 })(jQuery);
